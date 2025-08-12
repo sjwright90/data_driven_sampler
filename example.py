@@ -5,10 +5,15 @@ import pandas as pd
 
 import matplotlib.pyplot as plt
 import seaborn as sns
-
-from src.ilr_functions import calculate_sbp_from_hca, make_basis_formula
-from src.data_samplers import kmeans_representative_sampling, kcenter_greedy
-from src.metric_functions import plot_ecdf
+from data_driven_sampler.src.ilr_functions import (
+    calculate_sbp_from_hca,
+    make_basis_formula,
+)
+from data_driven_sampler.src.data_samplers import (
+    kmeans_representative_sampling,
+    kcenter_greedy,
+)
+from data_driven_sampler.src.metric_functions import plot_ecdf
 
 # from scipy.stats import energy_distance
 from scipy.spatial.distance import cdist, pdist
