@@ -48,7 +48,12 @@ def plot_ecdf(df_full, df_subset, col, log=False, normalize=False, **kwargs):
     else:
         srs_subset = srs_subset.to_numpy()
         srs_full = srs_full.to_numpy()
-    fig, ax = plt.subplots(figsize=(8, 4))
+    # fig, ax = plt.subplots(figsize=(8, 4))
+    if not _kwargs.get("ax", False):
+        fig, ax = plt.subplots(figsize=(8, 4))
+    else:
+        ax = _kwargs["ax"]
+        fig = ax.get_figure()
     sns.ecdfplot(
         srs_subset,
         label=_kwargs["label_subset"],

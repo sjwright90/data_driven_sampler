@@ -59,6 +59,118 @@ def kmeans_representative_sampling(
     return closest
 
 
+def kmeans_representative_sampling_with_locked(
+    X: np.ndarray,
+    k: int,
+    locked_indices: np.ndarray,
+    *,
+    seed: int = 0,
+    return_centroids: bool = False,
+):
+    """
+    Pick `k` NEW representative points via k-means while honoring a fixed set of
+    legacy (already-sampled) indices.
+
+    Legacy indices are ADDITIONAL to `k` — if you have 5 legacy samples and want
+    7 new ones, pass k=7 and expect 12 indices back.
+
+    Strategy
+    --------
+    1. Seed k_total = k + len(locked) cluster centers: legacy positions first,
+       then kmeans++ initialization for the k free clusters.
+    2. Fit MiniBatchKMeans with that initialization (n_init=1 — the seeding is
+       intentional, not a starting guess to be improved by multi-restart).
+    3. Find medoids for all k_total clusters, restricting eligible candidates to
+       non-legacy points so legacy indices can never "steal" a free slot.
+    4. Union free medoids with locked_indices and deduplicate.
+
+    Constraint model: **soft, not hard.**
+    sklearn's MiniBatchKMeans moves all cluster centers during fitting — there is
+    no native freeze mechanism.  The initialization biases clusters to form in
+    non-legacy space; the medoid-exclusion step (step 3) is the hard guarantee
+    that legacy indices appear in the output.  If you need truly hard-locked
+    cluster centers, a custom EM loop would be required.
+
+    Parameters
+    ----------
+    X : ndarray, shape (n_samples, n_features)
+        Feature matrix — should already be ILR-transformed and StandardScaler-
+        normalized, same as `kmeans_representative_sampling`.
+    k : int
+        Number of NEW (free) representatives to select.  Legacy samples are
+        additional to this count.
+    locked_indices : array-like of int
+        Positional (0-based, iloc-compatible) indices of legacy samples that
+        must appear in the output.  Duplicates are silently removed.
+    seed : int, default 0
+        RNG seed for kmeans_plusplus initialization of the free clusters.
+    return_centroids : bool, default False
+        If True, also return the fitted cluster center coordinates.
+
+    Returns
+    -------
+    indices : ndarray, shape (k + len(unique_locked),)
+        Positional indices of selected points — legacy + new medoids, sorted.
+        May be slightly shorter than k + len(locked) if multiple free clusters
+        collapse onto the same eligible medoid; downstream `kcenter_greedy` with
+        already_selected=indices will fill any such gap.
+    centroids : ndarray, shape (k_total, n_features), optional
+        Returned only if `return_centroids` is True.
+
+    Known edge cases
+    ----------------
+    - If locked indices are tightly clustered in one region, many of the k_total
+      clusters will form there and the k free clusters may cover less ground.
+      Consider whether legacy samples are spatially representative before using
+      this function.
+    - If k == 0, returns locked_indices immediately.
+    - If n_samples <= k + len(locked), returns all row indices.
+    """
+    locked = np.unique(np.asarray(locked_indices, dtype=int))
+    k_locked = len(locked)
+
+    if k == 0:
+        return (locked, X[locked]) if return_centroids else locked
+
+    n = X.shape[0]
+    k_total = k + k_locked
+    if n <= k_total:
+        out = np.arange(n)
+        return (out, X.copy()) if return_centroids else out
+
+    # Build a (k_total, n_features) init array: legacy positions first, then
+    # kmeans++ picks for the k free clusters.  Legacy positions anchor clusters
+    # in already-covered space so the free clusters are pushed elsewhere.
+    locked_centers = X[locked]  # (k_locked, n_features)
+    free_init, _ = kmeans_plusplus(X, n_clusters=k, random_state=seed)
+    full_init = np.vstack([locked_centers, free_init])  # (k_total, n_features)
+
+    km = MiniBatchKMeans(
+        n_clusters=k_total,
+        init=full_init,
+        n_init=1,  # initialization is intentional — no multi-restart
+        random_state=seed,
+        batch_size=1024,
+    ).fit(X)
+
+    # Restrict medoid candidates to non-legacy points so legacy indices are
+    # never "used up" as free medoids.
+    eligible_mask = np.ones(n, dtype=bool)
+    eligible_mask[locked] = False
+    eligible_idx = np.where(eligible_mask)[0]  # (n - k_locked,)
+
+    closest_in_eligible, _ = pairwise_distances_argmin_min(
+        km.cluster_centers_, X[eligible_idx]
+    )
+    free_medoids = eligible_idx[closest_in_eligible]  # map back to global idx
+
+    all_indices = np.unique(np.concatenate([locked, free_medoids]))
+
+    if return_centroids:
+        return all_indices, km.cluster_centers_
+    return all_indices
+
+
 def kcenter_greedy(
     X,
     k: int,

@@ -1,0 +1,45 @@
+Your current workflow = k-means representatives (≈90%) + k-center greedy tail (≈10%)
+
+This is a strong, practical hybrid: balances density (typical cases) and coverage (edge cases)
+
+Main weakness: the 90:10 split is arbitrary and should be tuned or benchmarked
+
+You explored replacing it with p-median / p-center / MCLP
+
+These methods natively operate on pairwise distance matrices (n×n)
+
+They support any distance (geostatistical, energy, EMD, etc.) — no Euclidean assumption
+
+They also handle “legacy” / preselected points cleanly (major advantage)
+
+Conceptually:
+
+p-median ≈ representativeness (like k-means stage)
+
+p-center ≈ coverage (like k-center stage)
+
+Your hybrid already approximates both objectives
+
+Key tradeoff:
+
+Facility-location methods = more principled but more expensive (NP-hard)
+
+Require full distance matrix → memory + compute bottleneck
+
+Best architecture:
+
+Use your current hybrid to compress data (e.g., 50k → 2k)
+
+Apply p-median / p-center on reduced set with custom distance
+
+Recommendation:
+
+Keep current method as baseline
+
+Add greedy p-median as comparator / refinement
+
+Evaluate using metrics: mean / p90 / max nearest distance
+
+Bottom line:
+👉 Your workflow is solid and likely competitive
+👉 Facility-location methods are best used as a second-stage optimizer, not full replacement
